@@ -7,6 +7,8 @@ module = "nothrottling_dl"
 author = "theychx"
 author-email = "theychx@fastmail.com"
 home-page = "https://github.com/theychx/nothrottling-dl"
+requires = ["youtube-dl >=2020.3.24"]
+requires-python = ">=3.6"
 classifiers = [
 	"License :: OSI Approved :: MIT License",
 	"Development Status :: 2 - Pre-Alpha",
