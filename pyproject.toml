@@ -7,12 +7,14 @@ module = "nothrottling_dl"
 author = "theychx"
 author-email = "theychx@fastmail.com"
 home-page = "https://github.com/theychx/nothrottling-dl"
-classifiers = ["License :: OSI Approved :: MIT License",
-			   "Development Status :: 2 - Pre-Alpha",
-    		   "Programming Language :: Python :: 3",
-    		   "Topic :: Multimedia",
-    		   "Topic :: Multimedia :: Sound/Audio",
-    		   "Topic :: Multimedia :: Video",]
+classifiers = [
+	"License :: OSI Approved :: MIT License",
+	"Development Status :: 2 - Pre-Alpha",
+	"Programming Language :: Python :: 3",
+	"Topic :: Multimedia",
+	"Topic :: Multimedia :: Sound/Audio",
+	"Topic :: Multimedia :: Video",
+]
 
 [tool.flit.scripts]
 nothrottling-dl = "nothrottling_dl.nothrottling_dl:cli"
