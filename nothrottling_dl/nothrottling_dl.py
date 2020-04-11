@@ -4,7 +4,7 @@ import time
 import youtube_dl
 from youtube_dl.utils import DownloadError, ExtractorError
 
-YDL_OPTS = {"usenetrc": True}
+YTDL_OPTS = {"usenetrc": True}
 OUTPUT_TEMPLATE = "{}/{} %(title)s.%(ext)s"
 INFO_MSG = "<nothrottling-dl> {}"
 
@@ -21,44 +21,46 @@ class DownloadOperationError(Exception):
     pass
 
 
-class Playlist:
+class YtdlAction:
+    _ytdl = youtube_dl.YoutubeDL(YTDL_OPTS)
+
+
+class Playlist(YtdlAction):
     def __init__(self, url):
-        self._ydl = youtube_dl.YoutubeDL(YDL_OPTS)
-        self._playlist = self._fetch_plist_data(url)
-        self._title = self._playlist["title"]
-        self._entries = list(self._playlist["entries"])
-        self._plist_length = len(self._entries)
-        self._swidth = len(str(self._plist_length))
-        self._pl_index = 0
-
-    def dl_plist_items(self):
-        for entry in self._entries:
-            self._pl_index += 1
-            self._ydl.params.update({"outtmpl": OUTPUT_TEMPLATE.format(self._title, self._plis)})
-            pre = time.time()
-            try:
-                info = self._ydl.extract_info(entry["url"])
-            except (DownloadError, ExtractorError):
-                raise DownloadOperationError
-            yield (info["duration"], round(time.time() - pre))
+        playlist = self._fetch_plist_data(url)
+        self.title = playlist["title"]
+        self._enumerated_items = list(enumerate(playlist["entries"], start=1))
+        self.length = len(self._enumerated_items)
 
     @property
-    def end_reached(self):
-        return self._pl_index == self._plist_length
-
-    @property
-    def _plis(self):
-        return str(self._pl_index).zfill(self._swidth)
+    def plist_items(self):
+        return (MediaItem(e) for e in self._enumerated_items)
 
     def _fetch_plist_data(self, url):
         try:
-            plist_data = self._ydl.extract_info(url, process=False)
+            plist_data = YtdlAction._ytdl.extract_info(url, process=False)
         except DownloadError:
             raise ResourceNotFoundError
         else:
             if "entries" not in plist_data:
                 raise NotAPlaylistError
         return plist_data
+
+
+class MediaItem(YtdlAction):
+    def __init__(self, enumerated_item):
+        self._pos, self._item = enumerated_item
+
+    def download(self, save_dir=".", itemn_zerofill=0):
+        plis = str(self._pos).zfill(itemn_zerofill)
+        YtdlAction._ytdl.params.update({"outtmpl": OUTPUT_TEMPLATE.format(save_dir, plis)})
+        pre = time.time()
+
+        try:
+            info = YtdlAction._ytdl.extract_info(self._item["url"])
+        except (DownloadError, ExtractorError):
+            raise DownloadOperationError
+        yield (info["duration"], round(time.time() - pre))
 
 
 def human_time(seconds):
@@ -76,22 +78,23 @@ def print_info(msg):
 
 def main(url):
     playlist = Playlist(url)
+    itemn_zerofill = len(str(playlist.length))
+    delay = None
+    media_dur, dl_dur = 0
 
-    for media_dur, dl_dur in playlist.dl_plist_items():
-        # This is lame. Please, somebody come up with a better solution.
-        if playlist.end_reached:
-            break
-        delay = max(media_dur - dl_dur, 0)
-
+    for item in playlist.plist_items:
         print()
-        print_info("Duration of media is {}.".format(human_time(media_dur)))
-        print_info("Duration of download operation was {}.".format(human_time(dl_dur)))
         if delay:
+            print_info("Duration of media is {}.".format(human_time(media_dur)))
+            print_info("Duration of download operation was {}.".format(human_time(dl_dur)))
             print_info("Waiting for {} until next download.".format(human_time(delay)))
             time.sleep(delay)
-        else:
+        elif delay == 0:
             print_info("No waiting necessary.")
         print()
+
+        media_dur, dl_dur = item.download(save_dir=playlist.title, itemn_zerofill=itemn_zerofill)
+        delay = max(media_dur - dl_dur, 0)
 
 
 def cli():
