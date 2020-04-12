@@ -98,7 +98,6 @@ def main(url):
         print()
 
 
-
 def cli():
     parser = argparse.ArgumentParser(
         description="Download media playlist contents, employing draconian anti-throttling measures."
