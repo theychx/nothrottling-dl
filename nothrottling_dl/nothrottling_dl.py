@@ -33,7 +33,7 @@ class Playlist:
         self.length = len(self._enumerated_items)
 
     @property
-    def plist_items(self):
+    def items(self):
         return (MediaItem(e) for e in self._enumerated_items)
 
     def _fetch_plist_data(self, url):
@@ -49,10 +49,10 @@ class Playlist:
 
 class MediaItem:
     def __init__(self, enumerated_item):
-        self._pos, self._item = enumerated_item
+        self.pos, self._item = enumerated_item
 
     def download(self, save_dir=".", itemn_zerofill=0):
-        plis = str(self._pos).zfill(itemn_zerofill)
+        plis = str(self.pos).zfill(itemn_zerofill)
         YtdlSession.ytdl.params.update({"outtmpl": OUTPUT_TEMPLATE.format(save_dir, plis)})
         pre = time.time()
 
@@ -80,12 +80,11 @@ def main(url):
     playlist = Playlist(url)
     itemn_zerofill = len(str(playlist.length))
 
-    for item in playlist.plist_items:
-        itempos = item[0]
+    for item in playlist.items:
         media_dur, dl_dur = item.download(save_dir=playlist.title, itemn_zerofill=itemn_zerofill)
         delay = max(media_dur - dl_dur, 0)
 
-        if itempos == playlist.length:
+        if item.pos == playlist.length:
             return
 
         print()
