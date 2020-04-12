@@ -21,11 +21,11 @@ class DownloadOperationError(Exception):
     pass
 
 
-class YtdlAction:
-    _ytdl = youtube_dl.YoutubeDL(YTDL_OPTS)
+class YtdlSession:
+    ytdl = youtube_dl.YoutubeDL(YTDL_OPTS)
 
 
-class Playlist(YtdlAction):
+class Playlist:
     def __init__(self, url):
         playlist = self._fetch_plist_data(url)
         self.title = playlist["title"]
@@ -38,7 +38,7 @@ class Playlist(YtdlAction):
 
     def _fetch_plist_data(self, url):
         try:
-            plist_data = YtdlAction._ytdl.extract_info(url, process=False)
+            plist_data = YtdlSession.ytdl.extract_info(url, process=False)
         except DownloadError:
             raise ResourceNotFoundError
         else:
@@ -47,17 +47,17 @@ class Playlist(YtdlAction):
         return plist_data
 
 
-class MediaItem(YtdlAction):
+class MediaItem:
     def __init__(self, enumerated_item):
         self._pos, self._item = enumerated_item
 
     def download(self, save_dir=".", itemn_zerofill=0):
         plis = str(self._pos).zfill(itemn_zerofill)
-        YtdlAction._ytdl.params.update({"outtmpl": OUTPUT_TEMPLATE.format(save_dir, plis)})
+        YtdlSession.ytdl.params.update({"outtmpl": OUTPUT_TEMPLATE.format(save_dir, plis)})
         pre = time.time()
 
         try:
-            info = YtdlAction._ytdl.extract_info(self._item["url"])
+            info = YtdlSession.ytdl.extract_info(self._item["url"])
         except (DownloadError, ExtractorError):
             raise DownloadOperationError
         yield (info["duration"], round(time.time() - pre))
@@ -79,22 +79,25 @@ def print_info(msg):
 def main(url):
     playlist = Playlist(url)
     itemn_zerofill = len(str(playlist.length))
-    delay = None
-    media_dur, dl_dur = 0
 
     for item in playlist.plist_items:
+        itempos = item[0]
+        media_dur, dl_dur = item.download(save_dir=playlist.title, itemn_zerofill=itemn_zerofill)
+        delay = max(media_dur - dl_dur, 0)
+
+        if itempos == playlist.length:
+            return
+
         print()
         if delay:
             print_info("Duration of media is {}.".format(human_time(media_dur)))
             print_info("Duration of download operation was {}.".format(human_time(dl_dur)))
             print_info("Waiting for {} until next download.".format(human_time(delay)))
             time.sleep(delay)
-        elif delay == 0:
+        else:
             print_info("No waiting necessary.")
         print()
 
-        media_dur, dl_dur = item.download(save_dir=playlist.title, itemn_zerofill=itemn_zerofill)
-        delay = max(media_dur - dl_dur, 0)
 
 
 def cli():
