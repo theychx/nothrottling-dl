@@ -1,12 +1,11 @@
 import argparse
 import time
-from pathlib import Path
 
 import youtube_dl
 from youtube_dl.utils import DownloadError, ExtractorError
 
-YTDL_OPTS = {"usenetrc": True}
-OUTPUT_TEMPLATE = "{}/{} {}.%(ext)s"
+YDL_OPTS = {"usenetrc": True}
+OUTPUT_TEMPLATE = "{}/{} %(title)s.%(ext)s"
 INFO_MSG = "<nothrottling-dl> {}"
 
 
@@ -22,47 +21,40 @@ class DownloadOperationError(Exception):
     pass
 
 
-class YtdlSession:
-    ytdl = youtube_dl.YoutubeDL(YTDL_OPTS)
-
-
 class Playlist:
     def __init__(self, url):
+        self._ydl = youtube_dl.YoutubeDL(YDL_OPTS)
         playlist = self._fetch_plist_data(url)
-        self.title = playlist["title"]
+        self._title = playlist["title"]
         self._enumerated_items = list(enumerate(playlist["entries"], start=1))
-        self.length = len(self._enumerated_items)
+        self._length = len(self._enumerated_items)
+        self._swidth = len(str(self._length))
+        self.last_item = False
 
-    @property
     def items(self):
-        return (MediaItem(e) for e in self._enumerated_items)
+        for pos, item in self._enumerated_items:
+            if pos == self._length:
+                self.last_item = True
+
+            plis = str(pos).zfill(self._swidth)
+            self._ydl.params.update({"outtmpl": OUTPUT_TEMPLATE.format(self._title, plis)})
+
+            pre = time.time()
+            try:
+                info = self._ydl.extract_info(item["url"])
+            except (DownloadError, ExtractorError):
+                raise DownloadOperationError
+            yield (info["duration"], round(time.time() - pre))
 
     def _fetch_plist_data(self, url):
         try:
-            plist_data = YtdlSession.ytdl.extract_info(url, process=False)
+            plist_data = self._ydl.extract_info(url, process=False)
         except DownloadError:
             raise ResourceNotFoundError
         else:
             if "entries" not in plist_data:
                 raise NotAPlaylistError
         return plist_data
-
-
-class MediaItem:
-    def __init__(self, enumerated_item):
-        self.pos, self._item = enumerated_item
-        self.title = self._item["title"]
-
-    def download(self, outtmpl=None):
-        if outtmpl:
-            YtdlSession.ytdl.params.update({"outtmpl": outtmpl})
-        pre = time.time()
-
-        try:
-            info = YtdlSession.ytdl.extract_info(self._item["url"])
-        except (DownloadError, ExtractorError):
-            raise DownloadOperationError
-        return (info["duration"], round(time.time() - pre))
 
 
 def human_time(seconds):
@@ -78,36 +70,18 @@ def print_info(msg):
     print(INFO_MSG.format(msg))
 
 
-def download_playlist(url):
+def main(url):
     playlist = Playlist(url)
-    itemn_zerofill = len(str(playlist.length))
-    already_fetched = None
-    playlist_path = Path(playlist.title)
 
-    if playlist_path.is_dir():
-        already_fetched = list(playlist_path.glob("*"))
-
-    print()
-    for item in playlist.items:
-        if already_fetched:
-            filematch = [f for f in already_fetched if item.title in str(f)]
-            if filematch and not any(f.match("*.part") for f in filematch):
-                print_info('Skipping "{}".'.format(item.title))
-                print()
-                continue
-
-        plis = str(item.pos).zfill(itemn_zerofill)
-        outtmpl = OUTPUT_TEMPLATE.format(playlist.title, plis, item.title)
-        media_dur, dl_dur = item.download(outtmpl=outtmpl)
+    for media_dur, dl_dur in playlist.items():
+        if playlist.last_item:
+            return
         delay = max(media_dur - dl_dur, 0)
 
-        if item.pos == playlist.length:
-            return
-
         print()
+        print_info("Duration of media is {}.".format(human_time(media_dur)))
+        print_info("Duration of download operation was {}.".format(human_time(dl_dur)))
         if delay:
-            print_info("Duration of media is {}.".format(human_time(media_dur)))
-            print_info("Duration of download operation was {}.".format(human_time(dl_dur)))
             print_info("Waiting for {} until next download.".format(human_time(delay)))
             time.sleep(delay)
         else:
@@ -124,7 +98,7 @@ def cli():
     err_msg = None
 
     try:
-        download_playlist(args.url)
+        main(args.url)
     except KeyboardInterrupt:
         err_msg = "Aborted by user."
     except ResourceNotFoundError:
