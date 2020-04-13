@@ -1,5 +1,6 @@
 import argparse
 import time
+from pathlib import Path
 
 import youtube_dl
 from youtube_dl.utils import DownloadError, ExtractorError
@@ -29,22 +30,22 @@ class Playlist:
         self._enumerated_items = list(enumerate(playlist["entries"], start=1))
         self._length = len(self._enumerated_items)
         self._swidth = len(str(self._length))
+        self._fetched = self._get_fetched()
         self.last_item = False
 
     def items(self):
         for pos, item in self._enumerated_items:
             if pos == self._length:
                 self.last_item = True
-
             plis = str(pos).zfill(self._swidth)
-            self._ydl.params.update({"outtmpl": OUTPUT_TEMPLATE.format(self._title, plis)})
 
-            pre = time.time()
-            try:
-                info = self._ydl.extract_info(item["url"])
-            except (DownloadError, ExtractorError):
-                raise DownloadOperationError
-            yield (info["duration"], round(time.time() - pre))
+            if self._is_fetched(item.get("title"), plis):
+                yield None
+            else:
+                self._ydl.params.update({"outtmpl": OUTPUT_TEMPLATE.format(self._title, plis)})
+                pre = time.time()
+                info = self._fetch_media(item["url"])
+                yield (info["duration"], round(time.time() - pre))
 
     def _fetch_plist_data(self, url):
         try:
@@ -55,6 +56,27 @@ class Playlist:
             if "entries" not in plist_data:
                 raise NotAPlaylistError
         return plist_data
+
+    def _fetch_media(self, url):
+        try:
+            return self._ydl.extract_info(url)
+        except (DownloadError, ExtractorError):
+            raise DownloadOperationError
+
+    def _get_fetched(self):
+        playlist_path = Path(self._title)
+        return list(playlist_path.glob("*")) if playlist_path.is_dir() else []
+
+    def _is_fetched(self, title, plis):
+        if not self._fetched:
+            return False
+        if title:
+            filematch = [f for f in self._fetched if title in str(f)]
+        else:
+            # Ugly hack for Pluralsight (and maybe others),
+            # where "title" field is missing from entry data.
+            filematch = [f for f in self._fetched if str(f.name).startswith("{} ".format(plis))]
+        return True if filematch and not any(f.match("*.part") for f in filematch) else False
 
 
 def human_time(seconds):
@@ -70,12 +92,19 @@ def print_info(msg):
     print(INFO_MSG.format(msg))
 
 
-def main(url):
+def download_playlist(url):
     playlist = Playlist(url)
 
-    for media_dur, dl_dur in playlist.items():
+    print()
+    for dl_info in playlist.items():
+        if not dl_info:
+            print_info("Skipping already downloaded item.")
+            print()
+            continue
         if playlist.last_item:
             return
+
+        media_dur, dl_dur = dl_info
         delay = max(media_dur - dl_dur, 0)
 
         print()
@@ -98,7 +127,7 @@ def cli():
     err_msg = None
 
     try:
-        main(args.url)
+        download_playlist(args.url)
     except KeyboardInterrupt:
         err_msg = "Aborted by user."
     except ResourceNotFoundError:
