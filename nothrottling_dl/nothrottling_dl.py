@@ -30,7 +30,7 @@ class Playlist:
         self._enumerated_items = list(enumerate(playlist["entries"], start=1))
         self._length = len(self._enumerated_items)
         self._swidth = len(str(self._length))
-        self._fetched = self._get_fetched()
+        self._fetched = Fetched(self._title)
         self.last_item = False
 
     def items(self):
@@ -39,7 +39,7 @@ class Playlist:
                 self.last_item = True
             plis = str(pos).zfill(self._swidth)
 
-            if self._is_fetched(item.get("title"), plis):
+            if self._fetched.is_fetched_item(item.get("title"), plis):
                 yield None
             else:
                 self._ydl.params.update({"outtmpl": OUTPUT_TEMPLATE.format(self._title, plis)})
@@ -63,11 +63,13 @@ class Playlist:
         except (DownloadError, ExtractorError):
             raise DownloadOperationError
 
-    def _get_fetched(self):
-        playlist_path = Path(self._title)
-        return list(playlist_path.glob("*")) if playlist_path.is_dir() else []
 
-    def _is_fetched(self, title, plis):
+class Fetched:
+    def __init__(self, playlist_title):
+        playlist_path = Path(playlist_title)
+        self._fetched = list(playlist_path.glob("*")) if playlist_path.is_dir() else []
+
+    def is_fetched_item(self, title, plis):
         if not self._fetched:
             return False
         if title:
